@@ -14,6 +14,7 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
+#include <camera.hpp>
 #include <iostream>
 #include <fstream>
 #include <stdexcept>
@@ -37,17 +38,11 @@ const std::string TEXTURE_PATH = "texture/Cat_diffuse.jpg";
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
-// camera
-glm::vec3 cameraPos   = glm::vec3(0.0f, 0.0f, 3.0f);
-glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
-glm::vec3 cameraUp    = glm::vec3(0.0f, 1.0f, 0.0f);
-
+//Camera
+Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+float lastX = WIDTH / 2.0f;
+float lastY = HEIGHT / 2.0f;
 bool firstMouse = true;
-float yaw   = -90.0f;	// yaw is initialized to -90.0 degrees since a yaw of 0.0 results in a direction vector pointing to the right so we initially rotate a bit to the left.
-float pitch =  0.0f;
-float lastX =  800.0f / 2.0;
-float lastY =  600.0 / 2.0;
-float fov   =  45.0f;
 
 // timing
 float deltaTime = 0.0f;	// time between current frame and last frame
@@ -154,6 +149,8 @@ namespace std {
         }
     };
 }
+
+
 /*
 const std::vector<Vertex> vertices = {
     {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
@@ -1328,7 +1325,7 @@ private:
             VkDeviceSize offsets[] = {0};
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
 
-            vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+            vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
@@ -1369,9 +1366,13 @@ private:
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
-        ubo.proj = glm::perspective(glm::radians(fov),(float)swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 100.0f);
+        ubo.model = glm::mat4(1.0f);
+        ubo.model = glm::translate(ubo.model, glm::vec3(2.0f, 2.0f, 0.0f)); // смещаем вниз чтобы быть в центре сцены
+        ubo.model = glm::scale(ubo.model, glm::vec3(0.01f, 0.01f, 0.01f));	// объект слишком большой для нашей сцены, поэтому немного уменьшим его
+	    ubo.model = glm::rotate(ubo.model, glm::radians(90.0f), glm::vec3(-1.0f, 0.0f, 0.0f));
+        ubo.view = camera.GetViewMatrix();
+        ubo.proj = glm::perspective(glm::radians(camera.Zoom), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
+        //ubo.proj[1][1] *= -1;
         ubo.proj[1][1] *= -1;
 
         memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
@@ -1662,22 +1663,18 @@ void processCamera(GLFWwindow *window)
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    float cameraSpeed = static_cast<float>(2.5 * deltaTime);
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        cameraPos += cameraSpeed * cameraFront;
+        camera.ProcessKeyboard(FORWARD, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        cameraPos -= cameraSpeed * cameraFront;
+        camera.ProcessKeyboard(BACKWARD, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
+        camera.ProcessKeyboard(LEFT, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
+        camera.ProcessKeyboard(RIGHT, deltaTime);
 }
 
-void mouse_callback(GLFWwindow* window, double xposIn, double yposIn)
+void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 {
-    float xpos = static_cast<float>(xposIn);
-    float ypos = static_cast<float>(yposIn);
-
     if (firstMouse)
     {
         lastX = xpos;
@@ -1686,26 +1683,10 @@ void mouse_callback(GLFWwindow* window, double xposIn, double yposIn)
     }
 
     float xoffset = xpos - lastX;
-    float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
+    float yoffset = lastY - ypos; // перевернуто, так как y-координаты идут снизу вверх
+
     lastX = xpos;
     lastY = ypos;
 
-    float sensitivity = 0.1f; // change this value to your liking
-    xoffset *= sensitivity;
-    yoffset *= sensitivity;
-
-    yaw += xoffset;
-    pitch += yoffset;
-
-    // make sure that when pitch is out of bounds, screen doesn't get flipped
-    if (pitch > 89.0f)
-        pitch = 89.0f;
-    if (pitch < -89.0f)
-        pitch = -89.0f;
-
-    glm::vec3 front;
-    front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-    front.y = sin(glm::radians(pitch));
-    front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-    cameraFront = glm::normalize(front);
+    camera.ProcessMouseMovement(xoffset, yoffset);
 }
