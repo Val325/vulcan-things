@@ -36,6 +36,9 @@ const uint32_t HEIGHT = 600;
 const std::string MODEL_PATH = "models/Cat.obj";
 const std::string TEXTURE_PATH = "texture/Cat_diffuse.jpg";
 
+const std::string MODEL_PATH2 = "models/viking_room.obj";
+const std::string TEXTURE_PATH2 = "texture/viking_room.png";
+
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
 //Camera
@@ -150,28 +153,11 @@ namespace std {
     };
 }
 
-
-/*
-const std::vector<Vertex> vertices = {
-    {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-
-    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
-};
-
-const std::vector<uint16_t> indices = {
-    0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4
-};
-*/
-class HelloTriangleApplication {
+class Object {
 public:
-    void run() {
+    void run(const std::string model_data, const std::string tex_data) {
+        model = model_data;
+        texture = tex_data;
         initWindow();
         initVulkan();
         mainLoop();
@@ -179,7 +165,7 @@ public:
     }
 
 private:
-   GLFWwindow* window;
+    GLFWwindow* window;
 
     VkInstance instance;
     VkDebugUtilsMessengerEXT debugMessenger;
@@ -234,8 +220,9 @@ private:
     std::vector<VkSemaphore> renderFinishedSemaphores;
     std::vector<VkFence> inFlightFences;
     uint32_t currentFrame = 0;
-
     bool framebufferResized = false;
+    std::string model;
+    std::string texture;
 
     void initWindow() {
         glfwInit();
@@ -250,7 +237,7 @@ private:
     }
 
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
-        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+        auto app = reinterpret_cast<Object*>(glfwGetWindowUserPointer(window));
         app->framebufferResized = true;
     }
 
@@ -901,7 +888,7 @@ private:
   
     void createTextureImage() {
         int texWidth, texHeight, texChannels;
-        stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        stbi_uc* pixels = stbi_load(texture.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
         VkDeviceSize imageSize = texWidth * texHeight * 4;
 
         if (!pixels) {
@@ -1066,7 +1053,7 @@ private:
         std::vector<tinyobj::material_t> materials;
         std::string warn, err;
 
-        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str())) {
+        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, model.c_str())) {
             throw std::runtime_error(warn + err);
         }
 
@@ -1364,12 +1351,22 @@ private:
 
         auto currentTime = std::chrono::high_resolution_clock::now();
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+        
+        float orbit_radius = 30.0f;
+        float orbit_speed = 10.0f; 
 
         UniformBufferObject ubo{};
         ubo.model = glm::mat4(1.0f);
-        ubo.model = glm::translate(ubo.model, glm::vec3(2.0f, 2.0f, 0.0f)); // смещаем вниз чтобы быть в центре сцены
+        ubo.model = glm::translate(ubo.model, glm::vec3(1.0f, 1.0f, 0.0f)); // смещаем вниз чтобы быть в центре сцены
         ubo.model = glm::scale(ubo.model, glm::vec3(0.01f, 0.01f, 0.01f));	// объект слишком большой для нашей сцены, поэтому немного уменьшим его
 	    ubo.model = glm::rotate(ubo.model, glm::radians(90.0f), glm::vec3(-1.0f, 0.0f, 0.0f));
+        
+
+        //orbiting
+        ubo.model = glm::translate(ubo.model, glm::vec3(sin(time) * -orbit_radius, cos(time) * orbit_radius, 0.0f));
+        
+        
+
         ubo.view = camera.GetViewMatrix();
         ubo.proj = glm::perspective(glm::radians(camera.Zoom), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
         //ubo.proj[1][1] *= -1;
@@ -1646,10 +1643,11 @@ private:
 };
 
 int main() {
-    HelloTriangleApplication app;
-
+    Object cat_obj;
+    Object room;
     try {
-        app.run();
+        cat_obj.run(MODEL_PATH, TEXTURE_PATH);
+        room.run(MODEL_PATH2, TEXTURE_PATH2);
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
         return EXIT_FAILURE;
