@@ -152,21 +152,35 @@ namespace std {
         }
     };
 }
+/*
+class Model {
+    private:
+            VkImage textureImage;
+            VkDeviceMemory textureImageMemory;
+            VkImageView textureImageView;
+            VkSampler textureSampler;
 
+            std::vector<Vertex> vertices;
+            std::vector<uint32_t> indices;
+            VkBuffer vertexBuffer;
+            VkDeviceMemory vertexBufferMemory;
+            VkBuffer indexBuffer;
+            VkDeviceMemory indexBufferMemory;
+    public:
+}
+*/
 class Object {
 public:
-    void run(GLFWwindow* window_object,
-             std::string model_data, 
-             std::string tex_data) {
-        window_obj = window_object;
-        model = model_data;
-        texture = tex_data;
+    void run() {
         initWindow();
         initVulkan();
         mainLoop();
         cleanup();
     }
-
+    void addDataPaths(std::string model, std::string texture){
+        models_path.push_back(model);
+        texture_path.push_back(texture);
+    }
 private:
     GLFWwindow* window_obj;
 
@@ -225,17 +239,20 @@ private:
     std::vector<VkFence> inFlightFences;
     uint32_t currentFrame = 0;
     bool framebufferResized = false;
-    std::string model;
-    std::string texture;
+
+    std::vector<std::string> models_path;
+    std::vector<std::string> texture_path;
+
 
     void initWindow() {
-        glfwInit();
 
+        glfwInit();
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
         window_obj = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
-	glfwSetCursorPosCallback(window_obj, mouse_callback);
-	glfwSetInputMode(window_obj, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        glfwSetInputMode(window_obj, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        
+        glfwSetCursorPosCallback(window_obj, mouse_callback);
         glfwSetWindowUserPointer(window_obj, this);
         glfwSetFramebufferSizeCallback(window_obj, framebufferResizeCallback);
     }
@@ -891,8 +908,15 @@ private:
     }
  
     void createTextureImage() {
+        
         int texWidth, texHeight, texChannels;
-        stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        stbi_uc* pixels;
+        for(std::string tex : texture_path){
+            pixels = stbi_load(tex.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        }
+
         VkDeviceSize imageSize = texWidth * texHeight * 4;
         mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
 
@@ -900,8 +924,7 @@ private:
             throw std::runtime_error("failed to load texture image!");
         }
 
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
+
         createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
 
         void* data;
@@ -910,7 +933,7 @@ private:
         vkUnmapMemory(device, stagingBufferMemory);
 
         stbi_image_free(pixels);
-
+        
         createImage(texWidth, texHeight, mipLevels, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory);
 
         transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);
@@ -919,6 +942,7 @@ private:
 
         vkDestroyBuffer(device, stagingBuffer, nullptr);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
+        
 
         generateMipmaps(textureImage, VK_FORMAT_R8G8B8A8_SRGB, texWidth, texHeight, mipLevels);
     }
@@ -1167,15 +1191,21 @@ private:
     }
 
 
+
+
     void loadModel() {
+        for(std::string model : models_path){
         tinyobj::attrib_t attrib;
         std::vector<tinyobj::shape_t> shapes;
         std::vector<tinyobj::material_t> materials;
         std::string warn, err;
-
-        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, model.c_str())) {
-            throw std::runtime_error(warn + err);
-        }
+        
+        
+            if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, model.c_str())) {
+                throw std::runtime_error(warn + err);
+            }
+        
+        
 
         std::unordered_map<Vertex, uint32_t> uniqueVertices{};
 
@@ -1202,6 +1232,7 @@ private:
                 }
 
                 indices.push_back(uniqueVertices[vertex]);
+                }
             }
         }
     }
@@ -1472,6 +1503,7 @@ private:
         auto currentTime = std::chrono::high_resolution_clock::now();
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
         
+        bool isOrbit = false;
         float orbit_radius = 30.0f;
         float orbit_speed = 10.0f; 
 
@@ -1483,8 +1515,9 @@ private:
         
 
         //orbiting
+        if (isOrbit){
         ubo.model = glm::translate(ubo.model, glm::vec3(sin(time) * -orbit_radius, cos(time) * orbit_radius, 0.0f));
-        
+        }
         
 
         ubo.view = camera.GetViewMatrix();
@@ -1653,7 +1686,7 @@ private:
     bool checkDeviceExtensionSupport(VkPhysicalDevice device) {
         uint32_t extensionCount;
         vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
-
+        
         std::vector<VkExtensionProperties> availableExtensions(extensionCount);
         vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
 
@@ -1763,13 +1796,13 @@ private:
 };
 
 int main() {
-    Object cat_obj;
-    Object room;
-    GLFWwindow *window;
+    Object app;
 
     try {
-        cat_obj.run(window, MODEL_PATH, TEXTURE_PATH);
-        room.run(window, MODEL_PATH2, TEXTURE_PATH2);
+        app.addDataPaths(MODEL_PATH, TEXTURE_PATH);
+        app.addDataPaths(MODEL_PATH2, TEXTURE_PATH);
+        app.run();
+
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
         return EXIT_FAILURE;
