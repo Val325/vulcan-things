@@ -191,14 +191,13 @@ class Model{
 			glm::mat4 view;
 			glm::mat4 model;
 	} matrices;
-
+    std::vector<VkDescriptorSet> descriptorSets;
     VkDescriptorSet descriptorSet;
     VkCommandPool commandPool;
 
     struct UniformBuffer {
        VkDescriptorBufferInfo descriptorSet{};
         std::vector<VkBuffer> uniformBuffers;
-        VkBuffer uniformBuffer;
         std::vector<VkDeviceMemory> uniformBuffersMemory;
         std::vector<void*> uniformBuffersMapped;
     } uniformBuffer;
@@ -209,6 +208,7 @@ class Model{
         VkDeviceMemory textureImageMemory;
         VkImageView textureImageView;
         VkSampler textureSampler;
+        std::vector<VkImageView> texturesDescriptors;
         std::string texture_path;
     } texture;
 
@@ -233,6 +233,10 @@ class Model{
         }
 
         throw std::runtime_error("failed to find suitable memory type!");
+    }
+    VkImageView createTextureImageView() {
+        VkImageView textureImageView = createImageView(texture.textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
+        return textureImageView; 
     }
 
     void createTextureSampler() {
@@ -1857,16 +1861,61 @@ private:
 
     void createDescriptorSets() {
 		for (auto &model: models) {
-
+        
 			// Allocates an empty descriptor set without actual descriptors from the pool using the set layout
 			VkDescriptorSetAllocateInfo allocateInfo{};
 			allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 			allocateInfo.descriptorPool = descriptorPool;
 			allocateInfo.descriptorSetCount = 1;
 			allocateInfo.pSetLayouts = &descriptorSetLayout;
-			vkAllocateDescriptorSets(device, &allocateInfo, &model.descriptorSet);
+			//vkAllocateDescriptorSets(device, &allocateInfo, &model.descriptorSet);
             
+            model.descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+            model.texture.texturesDescriptors.resize(MAX_FRAMES_IN_FLIGHT);
+            model.uniformBuffer.uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+            
+            if (vkAllocateDescriptorSets(device, &allocateInfo, &model.descriptorSet) != VK_SUCCESS) {
+                throw std::runtime_error("failed to allocate descriptor sets!");
+            }
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+           VkDescriptorBufferInfo bufferInfo{};
+            bufferInfo.buffer = model.uniformBuffer.uniformBuffers[i];
+            bufferInfo.offset = 0;
+            bufferInfo.range = sizeof(UniformBufferObject);
+
+            VkDescriptorImageInfo imageInfo{};
+            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            imageInfo.imageView = model.createTextureImageView();
+            imageInfo.sampler = model.texture.textureSampler;
+            
+            //if something wrong against 4 to 2
+            std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+
+            descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites[0].dstSet = model.descriptorSet;
+            descriptorWrites[0].dstBinding = 0;
+            descriptorWrites[0].dstArrayElement = 0;
+            descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrites[0].descriptorCount = 1;
+            descriptorWrites[0].pBufferInfo = &bufferInfo;
+            
+
+            descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites[1].dstSet = model.descriptorSet;
+            descriptorWrites[1].dstBinding = 1;
+            descriptorWrites[1].dstArrayElement = 0;
+            descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            descriptorWrites[1].descriptorCount = 1;
+            descriptorWrites[1].pImageInfo = &imageInfo;
+            
+
+
+            vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        }
+
             //uniform buffer obj
+            /*
             model.uniformBuffer.descriptorSet.buffer = model.uniformBuffer.uniformBuffer;
             model.uniformBuffer.descriptorSet.offset = 0;
             model.uniformBuffer.descriptorSet.range = sizeof(UniformBufferObject);
@@ -1875,24 +1924,26 @@ private:
             model.texture.descriptorSet.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             model.texture.descriptorSet.imageView = model.texture.textureImageView;
             model.texture.descriptorSet.sampler = model.texture.textureSampler;
-
+            */
 			// Update the descriptor set with the actual descriptors matching shader bindings set in the layout
 
-			std::array<VkWriteDescriptorSet, 2> writeDescriptorSets{};
+			//std::array<VkWriteDescriptorSet, 2> writeDescriptorSets{};
 
 			/*
 				Binding 0: Object matrices Uniform buffer
 			*/
+            /*
 			writeDescriptorSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			writeDescriptorSets[0].dstSet = model.descriptorSet;
 			writeDescriptorSets[0].dstBinding = 0;
 			writeDescriptorSets[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 			writeDescriptorSets[0].pBufferInfo = &model.uniformBuffer.descriptorSet;
 			writeDescriptorSets[0].descriptorCount = 1;
-
+            */
 			/*
 				Binding 1: Object temodele
 			*/
+            /*
 			writeDescriptorSets[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			writeDescriptorSets[1].dstSet = model.descriptorSet;
 			writeDescriptorSets[1].dstBinding = 1;
@@ -1900,13 +1951,13 @@ private:
 			// Images use a different descriptor structure, so we use pImageInfo instead of pBufferInfo
 			writeDescriptorSets[1].pImageInfo = &model.texture.descriptorSet; //IMPORTANT!!!
 			writeDescriptorSets[1].descriptorCount = 1;
-
+            */
 			// Execute the writes to update descriptors for this set
 			// Note that it's also possible to gather all writes and only run updates once, even for multiple sets
 			// This is possible because each VkWriteDescriptorSet also contains the destination set to be updated
 			// For simplicity we will update once per set instead
 
-			vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+			//vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 		}
 
     }
@@ -2065,20 +2116,23 @@ private:
             scissor.offset = {0, 0};
             scissor.extent = swapChainExtent;
             vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
-            VkBuffer vertexBuffers[] = {vertexBuffer};
+        for (auto &model: models) {
+            VkBuffer vertexBuffers[] = {model.mesh.vertexBuffer};
             VkDeviceSize offsets[] = {0};
+           
 
-            vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+                vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
 
-            vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdBindIndexBuffer(commandBuffer, model.mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+                //vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &model.descriptorSet, 0, nullptr);
+                
+                vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(model.mesh.indices.size()), 1, 0, 0, 0);
 
-            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
-
-            vkCmdEndRenderPass(commandBuffer);
-
+                
+            }
+        vkCmdEndRenderPass(commandBuffer);
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
         }  
@@ -2116,6 +2170,7 @@ private:
         float orbit_radius = 30.0f;
         float orbit_speed = 10.0f; 
 
+        for (auto &model: models) {
         UniformBufferObject ubo{};
         ubo.model = glm::mat4(1.0f);
         ubo.model = glm::translate(ubo.model, glm::vec3(1.0f, 1.0f, 0.0f)); 
@@ -2130,7 +2185,9 @@ private:
         ubo.proj = glm::perspective(glm::radians(camera.Zoom), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
         ubo.proj[1][1] *= -1;
 
-        memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+        //memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+        memcpy(model.uniformBuffer.uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+        }
     }
 
     void drawFrame() {
